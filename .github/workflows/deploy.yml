@@ -46,22 +46,32 @@ jobs:
 
       - name: Wait for Inspector Scan and Enforce Security Gate
         run: |
-          echo "Waiting 120 seconds for Amazon Inspector enhanced scanning to complete..."
-          sleep 120
+          echo "Fetching image digest directly from AWS ECR..."
+          IMAGE_DIGEST=$(aws ecr describe-images \
+            --repository-name ${{ env.ECR_REPOSITORY }} \
+            --image-ids imageTag=latest \
+            --query 'imageDetails[0].imageDigest' \
+            --output text)
+            
+          echo "Target Image Digest: $IMAGE_DIGEST"
           
-          echo "Querying AWS Inspector for Critical CVEs on image digest $IMAGE_DIGEST..."
-          CRITICAL_COUNT=$(aws inspector2 list-findings \
-            --filter-criteria '{"ecrImageHash": [{"comparison": "EQUALS", "value": "'"$IMAGE_DIGEST"'"}], "severity": [{"comparison": "EQUALS", "value": "CRITICAL"}]}' \
-            --query 'findings | length')
+          # Poll Amazon Inspector for up to 3 minutes
+          for i in {1..12}; do
+            echo "Attempt $i: Querying Inspector for Critical CVEs..."
+            CRITICAL_COUNT=$(aws inspector2 list-findings \
+              --filter-criteria '{"ecrImageHash": [{"comparison": "EQUALS", "value": "'"$IMAGE_DIGEST"'"}], "severity": [{"comparison": "EQUALS", "value": "CRITICAL"}]}' \
+              --query 'findings | length')
+              
+            if [ "$CRITICAL_COUNT" -gt 0 ]; then
+              echo "SECURITY GATE FAILED: $CRITICAL_COUNT Critical vulnerabilities detected. Deployment blocked."
+              exit 1
+            fi
+            
+            echo "No critical vulnerabilities found yet. Waiting 15 seconds..."
+            sleep 15
+          done
           
-          echo "Found $CRITICAL_COUNT Critical vulnerabilities."
-          
-          if [ "$CRITICAL_COUNT" -gt 0 ]; then
-            echo "SECURITY GATE FAILED: Critical vulnerabilities detected. Deployment blocked."
-            exit 1
-          else
-            echo "SECURITY GATE PASSED: No Critical vulnerabilities found."
-          fi
+          echo "SECURITY GATE PASSED: No Critical vulnerabilities found after 3 minutes."
 
       - name: Deploy to AWS Fargate
         run: |
