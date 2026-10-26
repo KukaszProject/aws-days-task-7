@@ -46,8 +46,8 @@ jobs:
 
       - name: Wait for Inspector Scan and Enforce Security Gate
         run: |
-          echo "Waiting 60 seconds for Amazon Inspector enhanced scanning to complete..."
-          sleep 60
+          echo "Waiting 120 seconds for Amazon Inspector enhanced scanning to complete..."
+          sleep 120
           
           echo "Querying AWS Inspector for Critical CVEs on image digest $IMAGE_DIGEST..."
           CRITICAL_COUNT=$(aws inspector2 list-findings \
